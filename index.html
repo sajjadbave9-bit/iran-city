@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="screen-orientation" content="landscape">
+<title>ایران سیتی</title>
+<style>
+:root{--bg:#f4f1ea;--sf:#fff;--tx:#1f2328;--mu:#6b7280;--ac:#0f766e;--bd:#d9d4c7;--rd:#c0392b}
+@media (prefers-color-scheme:dark){:root{--bg:#15181c;--sf:#1f242a;--tx:#eceff1;--mu:#9aa4ad;--ac:#2dd4bf;--bd:#333b44;--rd:#ff6b5b}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--tx);font-family:Tahoma,"Segoe UI",sans-serif;display:flex;flex-direction:column;font-size:14px;-webkit-user-select:none;user-select:none}
+#top{display:flex;gap:6px;padding:4px 8px;background:var(--sf);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.chip{padding:2px 8px;border-radius:12px;border:1px solid var(--bd);font-size:12px}
+#view{flex:1;min-height:0;position:relative;background:#9fd0f0}
+#cv{width:100%;height:100%;display:block;touch-action:none}
+#joy{position:absolute;left:16px;bottom:16px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid rgba(255,255,255,.6);touch-action:none}
+#knob{position:absolute;left:30px;top:30px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.8)}
+#act{position:absolute;right:10px;bottom:16px;left:140px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+#cb{position:absolute;top:8px;right:8px}
+button{font:inherit;background:var(--ac);color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
+button.g{background:#556;color:#fff}button.r{background:var(--rd)}button.big{font-size:18px;padding:12px 26px}
+button.on{outline:2px solid var(--tx)}
+input{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);min-width:0;width:100%;-webkit-user-select:text;user-select:text}
+#chat{position:absolute;top:0;right:0;bottom:0;width:min(46%,380px);display:none;flex-direction:column;background:var(--sf);border-left:1px solid var(--bd);z-index:5}
+#chat.open{display:flex}
+#ch{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--bd)}
+#log{flex:1;overflow-y:auto;padding:4px 8px;font-size:13px}
+.m{padding:2px 0}.m b{color:var(--ac)}.m.f{color:var(--rd)}.m.s{color:var(--mu);font-style:italic}
+#in{display:flex;gap:6px;padding:6px 8px;border-top:1px solid var(--bd)}
+.ov{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:10px;z-index:9;text-align:center}
+.card{display:flex;flex-direction:column;gap:8px;align-items:center;width:100%;max-width:440px}
+.card h1{margin:0;font-size:26px}.card h3{margin:0}
+.pane{display:flex;flex-direction:column;gap:8px;width:100%;align-items:center}
+.q{font-size:17px}
+.row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}
+.grid input[hidden]{display:none}
+.err{color:var(--rd);min-height:16px;font-size:12px}
+.note{color:var(--mu);font-size:11px}
+#mEdit{position:absolute;top:10px;left:10px}
+#mStart{position:absolute;bottom:14px;right:14px}
+#rot{position:fixed;inset:0;background:#000d;color:#fff;display:none;align-items:center;justify-content:center;font-size:20px;z-index:99;text-align:center;padding:20px}
+@media (orientation:portrait){#rot{display:flex}}
+</style>
+</head>
+<body>
+<div id="rot">📱 گوشی رو افقی بگیر تا بازی شروع بشه</div>
+
+<!-- ورود / ثبت‌نام -->
+<div id="auth" class="ov" hidden>
+ <div class="card">
+  <h1>🏙️ ایران سیتی</h1>
+  <div id="st1" class="pane"><div class="q">سلام! با کدوم میای؟</div>
+   <div class="row"><button id="bG">🙋 مهمان</button><button id="bA">🔐 حساب</button></div></div>
+  <div id="stG" class="pane" hidden>
+   <input id="gn" maxlength="14" placeholder="اسمت چیه؟">
+   <div class="row"><button id="gGo">ادامه</button><button class="g" data-back>بازگشت</button></div></div>
+  <div id="stA" class="pane" hidden>
+   <div class="row"><button id="tL" class="on">ورود</button><button id="tR" class="g">ثبت‌نام</button></div>
+   <div class="grid"><input id="ae" type="email" dir="ltr" placeholder="ایمیل" autocomplete="email"><input id="ap" type="password" dir="ltr" placeholder="رمز عبور" autocomplete="current-password"><input id="an" maxlength="14" placeholder="اسم در بازی" hidden></div>
+   <div class="row"><button id="aGo">ورود</button><button class="g" data-back>بازگشت</button></div>
+   <div id="note" class="note"></div></div>
+  <div id="err" class="err"></div>
+ </div>
+</div>
+
+<!-- منوی بازی -->
+<div id="menu" class="ov" hidden>
+ <button id="mEdit" class="g">✏️ ویرایش اطلاعات</button>
+ <div class="card"><h1>🏙️ ایران سیتی</h1><div id="mHi" class="q"></div><div id="mSt" class="note"></div></div>
+ <button id="mStart" class="big">▶ شروع آنلاین</button>
+</div>
+
+<!-- انتخاب سرور آنلاین -->
+<div id="srv" class="ov" hidden>
+ <div class="card">
+  <h3>🌐 سرورهای آنلاین</h3>
+  <div id="srvList" class="pane"></div>
+  <input id="sa" dir="ltr" placeholder="آدرس سرور، مثلاً https://myserver.com" autocomplete="off" hidden><button id="saB" hidden>ذخیره‌ی آدرس سرور</button>
+  <input id="sp" type="password" dir="ltr" placeholder="رمز سرور" autocomplete="off" hidden>
+  <div class="row"><button id="sGo" hidden>ورود به سرور</button><button id="sBack" class="g">بازگشت</button></div>
+  <div id="sErr" class="err"></div>
+ </div>
+</div>
+
+<!-- ویرایش اطلاعات -->
+<div id="edit" class="ov" hidden style="z-index:20;background:rgba(0,0,0,.55)">
+ <div class="card" style="background:var(--sf);padding:14px;border-radius:12px">
+  <h3>ویرایش اطلاعات</h3>
+  <div class="grid"><input id="en" maxlength="14" placeholder="اسم در بازی"><input id="ep" type="password" dir="ltr" placeholder="رمز جدید (اختیاری)" autocomplete="new-password"></div>
+  <div class="row"><button id="eSave">ذخیره</button><button id="eOut" class="r">خروج از حساب</button><button id="eClose" class="g">بستن</button></div>
+  <div id="eErr" class="err"></div>
+ </div>
+</div>
+
+<div id="top"><span class="chip" id="sM"></span><span class="chip" id="sH"></span><span class="chip" id="sJ"></span><span class="chip" id="sO"></span></div>
+<div id="view"><canvas id="cv"></canvas><button id="cb" class="g">💬 چت</button><div id="joy"><div id="knob"></div></div><div id="act"></div>
+ <div id="chat"><div id="ch"><b>💬 چت</b><button id="cx" class="g">✕</button></div><div id="log"></div><div id="in"><input id="ci" maxlength="120" placeholder="پیام بنویس..."><button id="cs">ارسال</button></div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+/* آدرس سرور حساب‌ها: وقتی server.js بازی رو سرو کنه خودکار 'same' می‌شه.
+   برای هاست جدا، این خط رو بکن: let BACKEND='https://your-server.com'; */
+let BACKEND='%%BACKEND%%';if(BACKEND.startsWith('%%'))BACKEND=null;else if(BACKEND==='same')BACKEND='';
+if(BACKEND===null){try{const sv=localStorage.getItem('ic_backend');if(sv)BACKEND=sv}catch(e){}}
+let SERVER=BACKEND!==null;
+
+const BAD=['کیر','کص','کون','جنده','گایید'],BADS=['حرومزاده','کثافت','جنده','عوضی','بیشرف','لعنتی'];
+const SH=[
+{id:'kabab',n:'🍢 کبابی',x:-80,z:-80,c:0xc0392b,menu:[['چلوکباب',80,50],['جوجه کباب',70,45],['دوغ',10,10]]},
+{id:'nan',n:'🥖 نانوایی',x:80,z:-80,c:0xb9770e,menu:[['نان سنگک',15,15],['نان بربری',12,12]]},
+{id:'bagh',n:'🛒 بقالی',x:-80,z:80,c:0x27ae60,menu:[['میوه',30,25],['آب‌میوه',25,20],['چیپس',20,15]]},
+{id:'pol',n:'🚓 کلانتری',x:80,z:80,c:0x2c3e91}];
+const me={id:Math.random().toString(36).slice(2,9),x:0,z:45,ry:Math.PI,m:200,h:100,job:'citizen',name:''};
+let online=false,peers={},S,R,cam,meMesh,yaw=0,pitch=.35,dist=9,jx=0,jz=0,started=false,bc=null,keys={},sess=null;
+
+function isBad(t){const n=s=>s.replace(/[‌‏\s._\-*]/g,'');return t.split(/[\s.,!؟?،]+/).map(n).some(k=>BAD.includes(k))||BADS.some(b=>n(t).includes(b))}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function say(h,c){const l=$('log'),d=document.createElement('div');d.className='m '+(c||'');d.innerHTML=h;l.appendChild(d);while(l.children.length>60)l.removeChild(l.firstChild);l.scrollTop=1e6}
+function hud(){const n=Object.keys(peers).length+1;$('sM').textContent='💰 '+me.m+' هزار تومان';$('sH').textContent='🍽️ سیری '+Math.round(me.h)+'٪';$('sJ').textContent=me.job=='police'?'👮 پلیس':'🧑 شهروند';$('sO').textContent=online?'🟢 آنلاین: '+n+' نفر':'🔴 قطع ارتباط'}
+
+/* ---------- حساب‌ها ---------- */
+const SESS='ic_sess',ACC='ic_acc';
+const ls={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+async function hash(p){try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('ic:'+p));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return'p:'+btoa(unescape(encodeURIComponent(p)))}}
+async function api(path,body,token){const r=await fetch(BACKEND+path,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},token?{Authorization:'Bearer '+token}:{}),body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'خطا در ارتباط با سرور');return j}
+const prof=()=>({name:me.name,m:me.m,h:me.h,job:me.job});
+function applyProf(p){me.name=p.name;me.m=p.m;me.h=p.h;me.job=p.job}
+function storeSess(){ls.set(SESS,sess)}
+const okEmail=e=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+function chkName(n){if(n.length<2)throw new Error('اسم حداقل ۲ حرف باشه');if(isBad(n))throw new Error('این اسم مجاز نیست')}
+
+async function register(email,pw,name){
+ email=email.trim().toLowerCase();name=name.trim();
+ if(!okEmail(email))throw new Error('ایمیل معتبر نیست');if(pw.length<6)throw new Error('رمز حداقل ۶ حرف باشه');chkName(name);
+ if(SERVER){const r=await api('/api/register',{email,password:pw,name});sess={email,token:r.token};applyProf(r.profile)}
+ else{const a=ls.get(ACC,{});if(a[email])throw new Error('این ایمیل قبلاً ثبت شده');a[email]={ph:await hash(pw),name,m:200,h:100,job:'citizen'};ls.set(ACC,a);sess={email};applyProf(a[email])}
+ storeSess()}
+async function login(email,pw){
+ email=email.trim().toLowerCase();if(!okEmail(email))throw new Error('ایمیل معتبر نیست');
+ if(SERVER){const r=await api('/api/login',{email,password:pw});sess={email,token:r.token};applyProf(r.profile)}
+ else{const u=ls.get(ACC,{})[email];if(!u||u.ph!==await hash(pw))throw new Error('ایمیل یا رمز اشتباهه');sess={email};applyProf(u)}
+ storeSess()}
+async function restore(){
+ const s=ls.get(SESS,null);if(!s)return false;
+ try{
+  if(s.guest){sess=s;applyProf(s.p)}
+  else if(SERVER&&s.token){const r=await api('/api/me',{},s.token);sess=s;applyProf(r.profile)}
+  else if(!SERVER){const u=ls.get(ACC,{})[s.email];if(!u)throw 0;sess=s;applyProf(u)}
+  else throw 0;
+  return true}catch(e){if(e instanceof TypeError&&s.token)return false;ls.del(SESS);sess=null;return false}}
+function persist(){if(!sess)return;
+ if(sess.guest){sess.p=prof();storeSess()}
+ else if(sess.token){api('/api/save',{profile:prof()},sess.token).catch(()=>{})}
+ else{const a=ls.get(ACC,{});if(a[sess.email]){Object.assign(a[sess.email],prof());ls.set(ACC,a)}}}
+
+/* ---------- صفحه‌ی ورود ---------- */
+let mode='L';
+function pane(id){['st1','stG','stA'].forEach(s=>$(s).hidden=s!==id);$('err').textContent=''}
+function showAuth(){$('menu').hidden=true;$('edit').hidden=true;$('auth').hidden=false;pane('st1')}
+function setMode(m){mode=m;$('tL').className=m==='L'?'on':'g';$('tR').className=m==='R'?'on':'g';$('an').hidden=m!=='R';$('aGo').textContent=m==='R'?'ثبت‌نام':'ورود';$('ap').autocomplete=m==='R'?'new-password':'current-password';$('err').textContent=''}
+$('note').textContent=SERVER?'':'⚠️ سرور تنظیم نشده؛ حساب فقط روی همین دستگاه می‌مونه و با حذف بازی پاک می‌شه';
+$('bG').onclick=()=>pane('stG');
+$('bA').onclick=()=>{pane('stA');setMode('L')};
+document.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>pane('st1'));
+$('tL').onclick=()=>setMode('L');$('tR').onclick=()=>setMode('R');
+$('gGo').onclick=()=>{try{const n=$('gn').value.trim();chkName(n);me.name=n;sess={guest:true,p:prof()};storeSess();toMenu()}catch(e){$('err').textContent=e.message}};
+$('aGo').onclick=async()=>{const b=$('aGo');b.disabled=true;$('err').textContent='';
+ try{if(mode==='R')await register($('ae').value,$('ap').value,$('an').value);else await login($('ae').value,$('ap').value);toMenu()}
+ catch(e){$('err').textContent=e.message==='Failed to fetch'?'اتصال به سرور برقرار نشد':e.message}b.disabled=false};
+
+/* ---------- منو ---------- */
+function toMenu(){$('auth').hidden=true;$('menu').hidden=false;
+ $('mHi').textContent='سلام '+me.name+' 👋';
+ $('mSt').textContent='💰 '+me.m+' هزار تومان · '+(me.job=='police'?'👮 پلیس':'🧑 شهروند')+(sess.guest?' · مهمان':' · '+sess.email)}
+$('mEdit').onclick=()=>{$('en').value=me.name;$('ep').value='';$('ep').hidden=!!sess.guest;$('eErr').textContent='';$('edit').hidden=false};
+$('eClose').onclick=()=>$('edit').hidden=true;
+$('eSave').onclick=async()=>{const b=$('eSave');b.disabled=true;$('eErr').textContent='';
+ try{const n=$('en').value.trim(),pw=$('ep').value;chkName(n);if(pw&&pw.length<6)throw new Error('رمز حداقل ۶ حرف باشه');
+  if(sess.guest){me.name=n}
+  else if(SERVER){const r=await api('/api/update',{name:n,password:pw||undefined},sess.token);me.name=r.profile.name}
+  else{const a=ls.get(ACC,{}),u=a[sess.email];u.name=n;if(pw)u.ph=await hash(pw);ls.set(ACC,a);me.name=n}
+  persist();toMenu();$('edit').hidden=true}
+ catch(e){$('eErr').textContent=e.message==='Failed to fetch'?'اتصال به سرور برقرار نشد':e.message}b.disabled=false};
+$('eOut').onclick=()=>{ls.del(SESS);sess=null;showAuth()};
+$('mStart').onclick=()=>{try{const d=document.documentElement;(d.requestFullscreen?d.requestFullscreen():Promise.resolve()).then(()=>screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape')).catch(()=>{});}catch(e){}showServers()};
+
+/* ---------- انتخاب سرور ---------- */
+let pickedSrv=null,ticket=null,es=null;
+const LOCAL_SERVERS=[{id:'test',name:'تست',count:0,max:20,locked:true}];
+async function showServers(){$('menu').hidden=true;$('srv').hidden=false;$('sErr').textContent='';$('sp').hidden=true;$('sGo').hidden=true;pickedSrv=null;
+ const L=$('srvList');L.innerHTML='<div class="note">در حال دریافت لیست...</div>';
+ $('sa').hidden=$('saB').hidden=SERVER;
+ if(!SERVER){L.innerHTML='';$('sErr').textContent='⚠️ سرور بازی تنظیم نشده. بدون سرور نمی‌شه با رفیقت وصل بشی؛ آدرس سرور رو بزن.';return}
+ let list;try{const r=await fetch(BACKEND+'/api/servers');list=(await r.json()).servers}catch(e){L.innerHTML='';$('sa').hidden=$('saB').hidden=false;$('sa').value=BACKEND||'';$('sErr').textContent='به این سرور وصل نشد: '+(BACKEND||location.origin);return}
+ L.innerHTML='';list.forEach(s=>{const b=document.createElement('button');b.className='g';b.style.width='100%';b.textContent='🔒 '+s.name+'  ·  '+s.count+'/'+s.max+' نفر';b.onclick=()=>{pickedSrv=s;[...L.children].forEach(c=>c.className='g');b.className='on';$('sp').hidden=false;$('sGo').hidden=false;$('sp').value='';$('sp').focus();$('sErr').textContent=''};L.appendChild(b)})}
+$('sBack').onclick=()=>{$('srv').hidden=true;$('menu').hidden=false};
+$('saB').onclick=()=>{let u=$('sa').value.trim();if(!u)return;if(!/^https?:\/\//i.test(u))u='https://'+u;u=u.replace(/\/+$/,'');BACKEND=u;SERVER=true;try{localStorage.setItem('ic_backend',u)}catch(e){}showServers()};
+$('sGo').onclick=async()=>{if(!pickedSrv)return;const b=$('sGo');b.disabled=true;$('sErr').textContent='';
+ try{const pw=$('sp').value;
+  if(SERVER){const r=await api('/api/join',{room:pickedSrv.id,password:pw,name:me.name,id:me.id});ticket=r.ticket}
+  else throw new Error('سرور بازی تنظیم نشده');
+  $('srv').hidden=true;start()}
+ catch(e){$('sErr').textContent=e.message==='Failed to fetch'?'اتصال به سرور برقرار نشد':e.message}b.disabled=false};
+$('sp').addEventListener('keydown',e=>{if(e.key==='Enter')$('sGo').click()});
+
+/* ---------- چت ---------- */
+function openChat(o){$('chat').classList.toggle('open',o);$('cb').hidden=o;if(o)$('ci').focus()}
+$('cb').onclick=()=>openChat(true);$('cx').onclick=()=>openChat(false);
+function sendChat(){const t=$('ci').value.trim();if(!t)return;if(isBad(t)){say('⚠️ پیام شما فحش داشت و ارسال نشد','f');$('ci').value='';return}
+ $('ci').value='';say('<b>'+esc(me.name)+':</b> '+esc(t));net({t:'c',id:me.id,n:me.name,m:t})}
+$('cs').onclick=sendChat;$('ci').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat()});
+
+/* ---------- آنلاین (بین تب‌ها؛ برای چند دستگاه باید net() و onNet() به سرور وصل بشن) ---------- */
+function net(o){
+ if(SERVER){if(!ticket)return;fetch(BACKEND+'/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:ticket,m:o}),keepalive:true}).then(r=>{if(!r.ok&&o.t==='c')r.json().then(j=>say('⚠️ '+esc(j.error||'ارسال نشد'),'f')).catch(()=>{})}).catch(()=>{});return}
+ if(bc)try{bc.postMessage(o)}catch(e){}}
+function removePeer(id){const p=peers[id];if(p){S.remove(p.mesh);delete peers[id]}}
+function onServer(o){
+ if(o.t==='snap'){o.list.forEach(q=>onNet({t:'p',id:q.id,n:q.n,x:q.x,z:q.z,ry:q.ry,quiet:1}))}
+ else if(o.t==='l'){removePeer(o.id);say('👋 '+esc(o.n)+' از شهر رفت','s')}
+ else onNet(o)}
+function onNet(o){
+ if(!o||o.id===me.id)return;
+ if(o.t==='p'){let p=peers[o.id];if(!p){p=peers[o.id]={mesh:makeChar(0xe67e22,o.n),n:o.n,tx:o.x,tz:o.z};p.mesh.position.set(o.x,0,o.z);S.add(p.mesh);if(!o.quiet)say('👋 '+esc(o.n)+' وارد شهر شد','s')}p.tx=o.x;p.tz=o.z;p.try=o.ry;p.seen=performance.now()}
+ else if(o.t==='c'){if(isBad(o.m))return;say('<b>'+esc(o.n)+':</b> '+esc(o.m))}}
+function goOnline(){
+ if(SERVER){if(es)es.close();es=new EventSource(BACKEND+'/api/stream?t='+ticket);
+  es.onopen=()=>{online=true};es.onerror=()=>{if(online)say('⚠️ ارتباط با سرور قطع شد؛ دوباره وصل می‌شم...','f');online=false};
+  es.onmessage=e=>{try{onServer(JSON.parse(e.data))}catch(x){}};return}
+ try{bc=new BroadcastChannel('iran-city');bc.onmessage=e=>onNet(e.data);online=true}catch(e){online=false;say('آنلاین در این مرورگر پشتیبانی نمی‌شه','f')}}
+
+/* ---------- سه‌بعدی ---------- */
+function label(txt,w,h,fs,bg,fg){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');if(bg){g.fillStyle=bg;g.fillRect(0,0,w,h)}g.fillStyle=fg||'#fff';g.font='bold '+fs+'px Tahoma';g.textAlign='center';g.textBaseline='middle';g.fillText(txt,w/2,h/2);return new THREE.CanvasTexture(c)}
+function makeChar(col,name){const g=new THREE.Group();const M=c=>new THREE.MeshLambertMaterial({color:c});
+ const b=new THREE.Mesh(new THREE.BoxGeometry(1,1.3,.6),M(col));b.position.y=1.5;g.add(b);
+ const h=new THREE.Mesh(new THREE.SphereGeometry(.4,12,12),M(0xf1c27d));h.position.y=2.5;g.add(h);
+ [-.25,.25].forEach(x=>{const l=new THREE.Mesh(new THREE.BoxGeometry(.4,.9,.45),M(0x2c3e50));l.position.set(x,.45,0);g.add(l)});
+ if(name){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:label(name,256,64,34,'rgba(0,0,0,.45)'),transparent:true}));s.scale.set(3,.75,1);s.position.y=3.4;g.add(s)}
+ return g}
+function build(){
+ S=new THREE.Scene();S.background=new THREE.Color(0x9fd0f0);S.fog=new THREE.Fog(0x9fd0f0,60,200);
+ R=new THREE.WebGLRenderer({canvas:$('cv'),antialias:true});
+ cam=new THREE.PerspectiveCamera(60,1,.1,400);
+ S.add(new THREE.HemisphereLight(0xffffff,0x667766,.9));const d=new THREE.DirectionalLight(0xffffff,.6);d.position.set(50,100,30);S.add(d);
+ const gr=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshLambertMaterial({color:0x7fb069}));gr.rotation.x=-Math.PI/2;S.add(gr);
+ const rm=new THREE.MeshLambertMaterial({color:0x444444});
+ [[0,0,200,14],[0,0,14,200]].forEach(a=>{const r=new THREE.Mesh(new THREE.PlaneGeometry(a[2],a[3]),rm);r.rotation.x=-Math.PI/2;r.position.set(a[0],.05,a[1]);S.add(r)});
+ SH.forEach(s=>{const b=new THREE.Mesh(new THREE.BoxGeometry(26,14,18),new THREE.MeshLambertMaterial({color:s.c}));b.position.set(s.x,7,s.z);S.add(b);
+  const sg=new THREE.Mesh(new THREE.PlaneGeometry(18,5),new THREE.MeshBasicMaterial({map:label(s.n,360,100,56,'#111'),transparent:true}));
+  sg.position.set(s.x,10,s.z+(s.z<0?9.1:-9.1));if(s.z>0)sg.rotation.y=Math.PI;S.add(sg)});
+ for(let i=0;i<30;i++){const x=(Math.random()-.5)*300,z=(Math.random()-.5)*300;if(Math.abs(x)<20||Math.abs(z)<20||(Math.abs(Math.abs(x)-80)<22&&Math.abs(Math.abs(z)-80)<22))continue;
+  const t=new THREE.Mesh(new THREE.CylinderGeometry(.5,.7,4),new THREE.MeshLambertMaterial({color:0x6b4423}));t.position.set(x,2,z);S.add(t);
+  const l=new THREE.Mesh(new THREE.SphereGeometry(3,10,10),new THREE.MeshLambertMaterial({color:0x2e7d32}));l.position.set(x,6,z);S.add(l)}
+ meMesh=makeChar(0x3498db,null);S.add(meMesh);
+ new ResizeObserver(rs).observe($('view'));rs()}
+function rs(){const v=$('view'),w=v.clientWidth,h=v.clientHeight;if(!R||!w||!h)return;R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+
+/* ---------- کنترل ---------- */
+(function(){const j=$('joy'),k=$('knob');let on=false;
+ function mv(e){const r=j.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let dx=e.clientX-cx,dy=e.clientY-cy;const m=Math.hypot(dx,dy),R0=30;if(m>R0){dx*=R0/m;dy*=R0/m}k.style.left=(30+dx)+'px';k.style.top=(30+dy)+'px';jx=dx/R0;jz=dy/R0}
+ j.addEventListener('pointerdown',e=>{on=true;j.setPointerCapture(e.pointerId);mv(e)});
+ j.addEventListener('pointermove',e=>{if(on)mv(e)});
+ const up=()=>{on=false;jx=jz=0;k.style.left='30px';k.style.top='30px'};
+ j.addEventListener('pointerup',up);j.addEventListener('pointercancel',up);
+ const cv=$('cv');let lx=null,ly=null;
+ cv.addEventListener('pointerdown',e=>{lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId)});
+ cv.addEventListener('pointermove',e=>{if(lx==null)return;yaw-=(e.clientX-lx)*.008;pitch=Math.max(.1,Math.min(1.1,pitch+(e.clientY-ly)*.005));lx=e.clientX;ly=e.clientY});
+ cv.addEventListener('pointerup',()=>lx=null);
+ addEventListener('keydown',e=>{if(document.activeElement.tagName==='INPUT')return;keys[e.key.toLowerCase()]=1});
+ addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0)})();
+
+/* ---------- مغازه‌ها ---------- */
+let nearId=null;
+function acts(){const s=SH.map(s=>({s,d:Math.hypot(me.x-s.x,me.z-s.z)})).sort((a,b)=>a.d-b.d)[0];
+ const id=s.d<22?s.s.id:null;if(id===nearId)return;nearId=id;const a=$('act');a.innerHTML='';if(!id)return;
+ const sh=s.s;
+ if(sh.menu)sh.menu.forEach(([n,p,f])=>{const b=document.createElement('button');b.textContent=n+' ('+p+'ک)';b.onclick=()=>{if(me.m<p){say('پولت نمی‌رسه 😅','f');return}me.m-=p;me.h=Math.min(100,me.h+f);say('✅ '+n+' خریدی','s');persist()};a.appendChild(b)});
+ else{const b=document.createElement('button');b.className='r';b.textContent=me.job=='police'?'استعفا از پلیسی':'👮 استخدام در پلیس';b.onclick=()=>{me.job=me.job=='police'?'citizen':'police';say(me.job=='police'?'👮 پلیس شدی! هر ۱۰ ثانیه حقوق می‌گیری':'استعفا دادی','s');nearId=null;persist()};a.appendChild(b)}}
+
+/* ---------- حلقه ---------- */
+let last=0,tp=0,tw=0,warned=false;
+function loop(t){requestAnimationFrame(loop);const dt=Math.min(.05,(t-last)/1000||0);last=t;
+ let ix=jx+(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),iz=jz+(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
+ const m=Math.hypot(ix,iz);if(m>1){ix/=m;iz/=m}
+ if(m>.05){const sp=14*dt,sn=Math.sin(yaw),cs=Math.cos(yaw);
+  const dx=ix*cs+iz*sn,dz=-ix*sn+iz*cs;me.x=Math.max(-190,Math.min(190,me.x+dx*sp));me.z=Math.max(-190,Math.min(190,me.z+dz*sp));me.ry=Math.atan2(dx,dz)}
+ meMesh.position.set(me.x,0,me.z);meMesh.rotation.y=me.ry;
+ cam.position.set(me.x+Math.sin(yaw)*Math.cos(pitch)*dist,2.5+Math.sin(pitch)*dist,me.z+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(me.x,2,me.z);
+ const now=performance.now();
+ for(const id in peers){const p=peers[id];if(now-p.seen>(SERVER?20000:4000)){removePeer(id);continue}
+  p.mesh.position.x+=(p.tx-p.mesh.position.x)*.2;p.mesh.position.z+=(p.tz-p.mesh.position.z)*.2;p.mesh.rotation.y=p.try||0}
+ me.h=Math.max(0,me.h-dt*.4);
+ tp+=dt;if(tp>(SERVER?.15:.1)){tp=0;net({t:'p',id:me.id,n:me.name,x:me.x,z:me.z,ry:me.ry})}
+ if(me.job=='police'){tw+=dt;if(tw>10){tw=0;me.m+=15;say('💵 حقوق پلیس: ۱۵ هزار تومان','s');persist()}}
+ acts();hud();R.render(S,cam)}
+setInterval(()=>{if(!started)return;if(me.h<=20&&!warned){say('🍽️ گرسنه‌ای! برو یه چیزی بخر','f');warned=true}if(me.h>40)warned=false;persist()},8000);
+addEventListener('pagehide',()=>{if(started)persist()});
+
+function start(){if(started)return;started=true;$('menu').hidden=true;build();goOnline();
+ say('سلام '+esc(me.name)+'! به سرور «'+esc(pickedSrv?pickedSrv.name:'تست')+'» خوش اومدی 🏙️','s');requestAnimationFrame(loop)}
+
+/* ---------- شروع: اگه قبلاً وارد شده، یکراست منو ---------- */
+(async()=>{hud();if(await restore())toMenu();else showAuth()})();
+</script>
+</body>
+</html>
