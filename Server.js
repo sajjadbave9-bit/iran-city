@@ -2,7 +2,10 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const DB = process.env.DB_FILE || path.join(__dirname, 'data.json');
-const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'sajjadrip4@gmail.com').toLowerCase();
+// لیست مدیرها: هر دو ایمیل همیشه مدیرن، حتی اگه متغیر ADMIN_EMAIL (با کاما جدا) هم ست شده باشه
+const ADMIN_EMAILS = [...new Set(['sajjadrip4@gmail.com', 'callofdutytja1948@gmail.com']
+  .concat(String(process.env.ADMIN_EMAIL || '').split(',')).map(s => s.trim().toLowerCase()).filter(Boolean))];
+const isAdminEmail = e => ADMIN_EMAILS.includes(String(e || '').toLowerCase());
 
 let db = { users: {}, tokens: {} };
 try { db = JSON.parse(fs.readFileSync(DB, 'utf8')); } catch (e) {}
@@ -10,6 +13,7 @@ db.users = db.users || {}; db.tokens = db.tokens || {};
 db.banned = db.banned || {};          // ایمیل‌های بن‌شده
 db.bannedNames = db.bannedNames || {}; // اسم مهمان‌های بن‌شده
 db.reports = db.reports || [];        // گزارش‌های بازیکن‌ها
+db.jailed = db.jailed || {};      // مهمان‌های زندانی: اسم -> زمان آزادی
 let dirty = false;
 const save = () => { dirty = true; };
 function flush() { if (!dirty) return; dirty = false; fs.writeFileSync(DB + '.tmp', JSON.stringify(db)); fs.renameSync(DB + '.tmp', DB); }
@@ -23,15 +27,18 @@ const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 32).toString('hex');
 const same = (a, b) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const okEmail = e => typeof e === 'string' && e.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 const BAD = ['کیر', 'کص', 'کون', 'جنده', 'گایید', 'حرومزاده', 'کثافت', 'عوضی', 'بیشرف', 'لعنتی'];
-const cleanName = n => { n = String(n || '').trim(); if (n.length < 2 || n.length > 14) return null; const s = n.replace(/[‌‏\s._\-*]/g, ''); return BAD.some(b => s.includes(b)) ? null : n; };
+const cleanName = n => { n = String(n || '').trim(); if (n.length < 2 || n.length > 14) return null; const s = n.replace(/[\u200c\u200f\s._\-*]/g, ''); return BAD.some(b => s.includes(b)) ? null : n; };
 const clamp = (v, a, b, d) => (typeof v === 'number' && isFinite(v)) ? Math.max(a, Math.min(b, v)) : d;
 const lower = s => String(s || '').trim().toLowerCase();
-const profile = u => ({ name: u.name, m: u.m, h: u.h, job: u.job, police: !!u.police });
+const CAR_IDS = ['pride', 'snapp', 'paykan', 'samand', 'p405', 'nissan', 'p206', 'yamaha100', 'honda125', 'cb1300', 'ninja'], CAR_T = [1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14];
+const left = t => Math.max(0, (t || 0) - Date.now());
+const jailOf = (email, name) => (email && db.users[email]) ? left(db.users[email].jailUntil) : left(db.jailed[lower(name)]);
+const profile = u => ({ name: u.name, m: u.m, h: u.h, job: u.job, police: !!u.police, pay: u.pay || 0, cars: u.cars || [], jailMs: left(u.jailUntil) });
 function newToken(email) { const t = crypto.randomBytes(32).toString('hex'); db.tokens[t] = email; save(); return t; }
 function auth(req) { const t = (req.headers.authorization || '').replace(/^Bearer /, ''); const e = db.tokens[t]; return e && db.users[e] && !db.banned[e] ? { email: e, user: db.users[e], token: t } : null; }
 
 const hits = new Map();
-function limited(req) { const ip = req.socket.remoteAddress, n = Date.now(), h = hits.get(ip) || { c: 0, t: n }; if (n - h.t > 60000) { h.c = 0; h.t = n; } h.c++; hits.set(ip, h); return h.c > 20; }
+function limited(req) { const ip = String(req.headers['x-real-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0] || req.socket.remoteAddress).trim(), n = Date.now(), h = hits.get(ip) || { c: 0, t: n }; if (n - h.t > 60000) { h.c = 0; h.t = n; } h.c++; hits.set(ip, h); return h.c > 20; }
 
 const routes = {
   '/api/register': async (req, res, b) => {
@@ -57,7 +64,11 @@ const routes = {
     a.user.m = clamp(p.m, 0, 1e6, a.user.m); a.user.h = clamp(p.h, 0, 100, a.user.h);
     // پلیس شدن فقط با مجوزِ سازنده
     if (p.job === 'citizen') a.user.job = 'citizen';
-    else if (p.job === 'police' && (a.user.police || a.email === ADMIN_EMAIL)) a.user.job = 'police';
+    else if (p.job === 'police' && (a.user.police || isAdminEmail(a.email))) a.user.job = 'police';
+    a.user.pay = clamp(p.pay, 0, 1e6, a.user.pay || 0);
+    if (p.job === 'banker' || p.job === 'baker') a.user.job = p.job;
+    // ماشین‌ها فقط اضافه می‌شن (هیچ‌وقت کم نمی‌شن) و فقط از لیست مجاز
+    if (Array.isArray(p.cars)) a.user.cars = [...new Set([...(a.user.cars || []), ...p.cars.filter(c => CAR_IDS.includes(c))])];
     save(); send(res, 200, { ok: true });
   },
   '/api/update': async (req, res, b) => {
@@ -74,7 +85,7 @@ const ROOMS = {
   free: { name: 'آزاد', pw: '', max: 50, players: new Map() }, // بدون رمز
 };
 const tickets = new Map(); // ticket -> {room, id, name, email, perm, t}
-const pub = p => ({ id: p.id, n: p.name, x: p.x, z: p.z, ry: p.ry, j: p.j, w: p.w });
+const pub = p => ({ id: p.id, n: p.name, x: p.x, z: p.z, ry: p.ry, j: p.j, w: p.w, cr: p.cr || 0, jb: p.jb || 0, y: p.y || 0 });
 function bcast(room, obj, exceptId) { const d = 'data: ' + JSON.stringify(obj) + '\n\n'; for (const p of room.players.values()) if (p.id !== exceptId) { try { p.res.write(d); } catch (e) {} } }
 setInterval(() => { for (const r of Object.values(ROOMS)) for (const p of r.players.values()) { try { p.res.write(': ping\n\n'); } catch (e) {} } const n = Date.now(); for (const [k, v] of tickets) if (n - v.t > 6 * 3600e3) tickets.delete(k); }, 15000);
 
@@ -82,7 +93,7 @@ const allPlayers = () => Object.values(ROOMS).flatMap(r => [...r.players.values(
 const sendTo = (p, obj) => { try { p.res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch (e) {} };
 function kick(p) { sendTo(p, { t: 'ban' }); try { p.res.end(); } catch (e) {} }
 function banEmail(email) {
-  if (!email || email === ADMIN_EMAIL) return false;
+  if (!email || isAdminEmail(email)) return false;
   db.banned[email] = true; save();
   for (const [t, v] of tickets) if (v.email === email) tickets.delete(t);
   allPlayers().filter(p => p.email === email).forEach(kick);
@@ -114,7 +125,7 @@ routes['/api/join'] = async (req, res, b) => {
   if (!a && db.bannedNames[lower(name)]) return fail(res, 403, 'این اسم بن شده');
   if (!room.players.has(id) && room.players.size >= room.max) return fail(res, 409, 'سرور پره');
   const t = crypto.randomBytes(24).toString('hex');
-  const perm = !!(a && (a.user.police || a.email === ADMIN_EMAIL));
+  const perm = !!(a && (a.user.police || isAdminEmail(a.email)));
   tickets.set(t, { room: b.room, id, name, email: a ? a.email : '', perm, t: Date.now(), lastRep: 0 });
   send(res, 200, { ticket: t });
 };
@@ -122,17 +133,23 @@ routes['/api/send'] = async (req, res, b) => {
   const k = tickets.get(b.t); if (!k) return fail(res, 401, 'نشست منقضی شد');
   const room = ROOMS[k.room], p = room.players.get(k.id), m = b.m || {};
   if (!p) return fail(res, 409, 'به سرور وصل نیستی');
+  if (m.t === 'l') { // خروج صریح: فوری از صحنه پاک می‌شه
+    if (room.players.get(k.id) === p) { room.players.delete(k.id); bcast(room, { t: 'l', id: k.id, n: k.name }); try { p.res.end(); } catch (e) {} }
+    return send(res, 200, { ok: true });
+  }
   if (m.t === 'p') {
-    p.x = clamp(m.x, -200, 200, p.x); p.z = clamp(m.z, -200, 200, p.z); p.ry = clamp(m.ry, -10, 10, p.ry);
+    p.x = clamp(m.x, -420, 420, p.x); p.z = clamp(m.z, -420, 420, p.z); p.ry = clamp(m.ry, -10, 10, p.ry);
     // ظاهر پلیس فقط برای کسی که مجوز دارد و فقط توی سرور تست
     p.j = (p.perm && k.room === 'test' && m.j) ? 1 : 0;
     p.w = (k.room === 'test' && m.w) ? 1 : 0;
-    bcast(room, { t: 'p', id: p.id, n: p.name, x: p.x, z: p.z, ry: p.ry, j: p.j, w: p.w }, p.id);
+    p.cr = CAR_T.includes(m.cr) ? m.cr : 0;
+    p.jb = [0, 1, 2].includes(m.jb) ? m.jb : 0; p.y = clamp(m.y, 0, 400, 0);
+    bcast(room, { t: 'p', id: p.id, n: p.name, x: p.x, z: p.z, ry: p.ry, j: p.j, w: p.w, cr: p.cr || 0, jb: p.jb || 0, y: p.y || 0 }, p.id);
   }
   else if (m.t === 'c') {
     const txt = String(m.m || '').trim().slice(0, 120); if (!txt) return send(res, 200, { ok: true });
-    if (/^⁣?(ADM|RPT)\|/.test(txt)) return send(res, 200, { ok: true }); // دستورهای مدیر دیگه از چت رد نمی‌شن
-    const s = txt.replace(/[‌‏\s._\-*]/g, ''); if (BAD.some(w => s.includes(w))) return fail(res, 400, 'پیام فحش داشت');
+    if (/^\u2063?(ADM|RPT)\|/.test(txt)) return send(res, 200, { ok: true }); // دستورهای مدیر دیگه از چت رد نمی‌شن
+    const s = txt.replace(/[\u200c\u200f\s._\-*]/g, ''); if (BAD.some(w => s.includes(w))) return fail(res, 400, 'پیام فحش داشت');
     const n = Date.now(); if (n - (p.lastChat || 0) < 700) return fail(res, 429, 'آروم‌تر');
     p.lastChat = n; bcast(room, { t: 'c', id: p.id, n: p.name, m: txt }, p.id);
   }
@@ -153,18 +170,19 @@ routes['/api/report'] = async (req, res, b) => {
   send(res, 200, { ok: true });
 };
 
-/* ---------- پنل مدیر (فقط ایمیل سازنده) ---------- */
-const adm = (req, res) => { const a = auth(req); if (!a || a.email !== ADMIN_EMAIL) { fail(res, 403, 'اجازه نداری'); return null; } return a; };
+/* ---------- پنل مدیر (فقط ایمیل‌های مدیر) ---------- */
+const adm = (req, res) => { const a = auth(req); if (!a || !isAdminEmail(a.email)) { fail(res, 403, 'اجازه نداری'); return null; } return a; };
 routes['/api/admin/users'] = async (req, res) => {
   if (!adm(req, res)) return;
   const online = new Set(allPlayers().map(p => p.email).filter(Boolean));
-  const users = Object.entries(db.users).map(([email, u]) => ({ email, name: u.name, m: u.m, police: !!u.police, banned: !!db.banned[email], online: online.has(email) }))
+  const users = Object.entries(db.users).map(([email, u]) => ({ email, name: u.name, m: u.m, police: !!u.police, banned: !!db.banned[email], online: online.has(email), jailMs: left(u.jailUntil) }))
     .sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name));
-  send(res, 200, { users, names: Object.keys(db.bannedNames) });
+  const jailed = Object.entries(db.jailed).map(([n, t]) => ({ name: n, ms: left(t) })).filter(x => x.ms > 0);
+  send(res, 200, { users, names: Object.keys(db.bannedNames), jailed });
 };
 routes['/api/admin/players'] = async (req, res) => {
   if (!adm(req, res)) return;
-  send(res, 200, { players: Object.entries(ROOMS).flatMap(([rid, r]) => [...r.players.values()].map(p => ({ id: p.id, name: p.name, room: rid, email: p.email || '', perm: !!p.perm }))) });
+  send(res, 200, { players: Object.entries(ROOMS).flatMap(([rid, r]) => [...r.players.values()].map(p => ({ id: p.id, name: p.name, room: rid, email: p.email || '', perm: !!p.perm, jailMs: jailOf(p.email, p.name) }))) });
 };
 routes['/api/admin/reports'] = async (req, res) => {
   if (!adm(req, res)) return;
@@ -174,13 +192,15 @@ routes['/api/admin/report-done'] = async (req, res, b) => {
   if (!adm(req, res)) return;
   const i = parseInt(b.i, 10), r = db.reports[i]; if (!r) return fail(res, 404, 'گزارش پیدا نشد');
   db.reports.splice(i, 1); save();
-  let banned = false; if (b.ban) banned = banByName(r.tn);
+  let banned = false;
+  if (b.ban === 'jail') jailName(r.tn, 120);
+  else if (b.ban) banned = banByName(r.tn);
   send(res, 200, { ok: true, banned });
 };
 routes['/api/admin/ban'] = async (req, res, b) => {
   if (!adm(req, res)) return;
   const email = lower(b.email), name = lower(b.name), on = b.on !== false;
-  if (email === ADMIN_EMAIL) return fail(res, 400, 'نمی‌شه خودت رو بن کرد');
+  if (isAdminEmail(email)) return fail(res, 400, 'نمی‌شه مدیر رو بن کرد');
   if (!on) {
     if (email) delete db.banned[email];
     if (name) delete db.bannedNames[name];
@@ -225,6 +245,32 @@ routes['/api/admin/police'] = async (req, res, b) => {
   send(res, 200, { ok: true });
 };
 
+/* ---------- زندان ---------- */
+function setJail(email, name, mins) {
+  const until = mins > 0 ? Date.now() + mins * 60000 : 0;
+  if (email && db.users[email]) { if (until) db.users[email].jailUntil = until; else delete db.users[email].jailUntil; }
+  else if (name) { const n = lower(name); if (until) db.jailed[n] = until; else delete db.jailed[n]; }
+  save();
+  const ms = until ? until - Date.now() : 0;
+  allPlayers().filter(p => email ? p.email === email : (!p.email && lower(p.name) === lower(name))).forEach(p => sendTo(p, { t: 'jail', ms }));
+}
+function jailName(name, mins) {
+  const n = lower(name); if (!n) return;
+  for (const [email, u] of Object.entries(db.users)) if (lower(u.name) === n && !isAdminEmail(email)) setJail(email, '', mins);
+  setJail('', n, mins);
+}
+routes['/api/admin/jail'] = async (req, res, b) => {
+  if (!adm(req, res)) return;
+  const mins = Math.round(clamp(Number(b.minutes), 0, 10080, 0));
+  let email = lower(b.email), name = String(b.name || '');
+  if (!email && b.id) { const p = allPlayers().find(x => x.id === String(b.id)); if (!p) return fail(res, 404, 'بازیکن آنلاین نیست'); email = p.email || ''; name = p.name; }
+  if (isAdminEmail(email)) return fail(res, 400, 'نمی‌شه مدیر رو زندانی کرد');
+  if (email) { if (!db.users[email]) return fail(res, 404, 'حساب پیدا نشد'); setJail(email, '', mins); }
+  else if (lower(name)) jailName(name, mins);
+  else return fail(res, 400, 'مشخص نیست');
+  send(res, 200, { ok: true });
+};
+
 http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   if (req.method === 'OPTIONS') return send(res, 204, {});
@@ -237,6 +283,7 @@ http.createServer(async (req, res) => {
     const p = { id: k.id, name: k.name, email: k.email, room: k.room, perm: k.perm, x: 0, z: 45, ry: 3.14, j: 0, w: 0, res };
     room.players.set(k.id, p);
     res.write('data: ' + JSON.stringify({ t: 'snap', list: [...room.players.values()].filter(q => q.id !== k.id).map(pub) }) + '\n\n');
+    { const jm = jailOf(k.email, k.name); if (jm > 0) sendTo(p, { t: 'jail', ms: jm }); }
     bcast(room, { t: 'j', id: p.id, n: p.name }, p.id);
     req.on('close', () => { if (room.players.get(k.id) === p) { room.players.delete(k.id); bcast(room, { t: 'l', id: k.id, n: k.name }); } });
     return;
