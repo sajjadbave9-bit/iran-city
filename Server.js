@@ -13,7 +13,10 @@ db.users = db.users || {}; db.tokens = db.tokens || {};
 db.banned = db.banned || {};          // ایمیل‌های بن‌شده
 db.bannedNames = db.bannedNames || {}; // اسم مهمان‌های بن‌شده
 db.reports = db.reports || [];        // گزارش‌های بازیکن‌ها
+db.homes = db.homes || {};          // id خانه -> { o: ایمیل مالک, t: آخرین دریافت اجاره }
 db.jailed = db.jailed || {};      // مهمان‌های زندانی: اسم -> زمان آزادی
+// اصلاح یک‌باره: حساب‌هایی که موجودی تستی دقیقاً ۹۹۹۹۹ سکه دارن به مقدار شروع برمی‌گردن
+for (const u of Object.values(db.users)) if (u.m === 99999) u.m = 200;
 let dirty = false;
 const save = () => { dirty = true; };
 function flush() { if (!dirty) return; dirty = false; fs.writeFileSync(DB + '.tmp', JSON.stringify(db)); fs.renameSync(DB + '.tmp', DB); }
@@ -30,10 +33,14 @@ const BAD = ['کیر', 'کص', 'کون', 'جنده', 'گایید', 'حرومزا
 const cleanName = n => { n = String(n || '').trim(); if (n.length < 2 || n.length > 14) return null; const s = n.replace(/[\u200c\u200f\s._\-*]/g, ''); return BAD.some(b => s.includes(b)) ? null : n; };
 const clamp = (v, a, b, d) => (typeof v === 'number' && isFinite(v)) ? Math.max(a, Math.min(b, v)) : d;
 const lower = s => String(s || '').trim().toLowerCase();
-const CAR_IDS = ['pride', 'snapp', 'paykan', 'samand', 'p405', 'nissan', 'p206', 'yamaha100', 'honda125', 'cb1300', 'ninja'], CAR_T = [1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14];
+const CAR_IDS = ['pride', 'snapp', 'paykan', 'samand', 'p405', 'nissan', 'p206', 'yamaha100', 'honda125', 'cb1300', 'ninja', 'heli'], CAR_T = [1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15];
 const left = t => Math.max(0, (t || 0) - Date.now());
 const jailOf = (email, name) => (email && db.users[email]) ? left(db.users[email].jailUntil) : left(db.jailed[lower(name)]);
-const profile = u => ({ name: u.name, m: u.m, h: u.h, job: u.job, police: !!u.police, pay: u.pay || 0, cars: u.cars || [], jailMs: left(u.jailUntil) });
+const profile = u => ({ name: u.name, m: u.m, h: u.h, job: u.job, police: !!u.police, pay: u.pay || 0, cars: u.cars || [], jailMs: left(u.jailUntil), mv: u.mv || 0 });
+const HOMES = { h1: { n: 'آپارتمان کوچک', p: 3000, r: 60 }, h2: { n: 'آپارتمان نوساز', p: 5000, r: 100 }, h3: { n: 'خانه‌ی حیاط‌دار', p: 8000, r: 160 }, h4: { n: 'خانه‌ی دوبلکس', p: 12000, r: 240 }, h5: { n: 'ویلای باغ', p: 20000, r: 380 }, h6: { n: 'ویلای لوکس', p: 32000, r: 580 }, h7: { n: 'عمارت', p: 60000, r: 1050 }, h8: { n: 'پنت‌هاوس', p: 100000, r: 1700 } };
+const RENT_CAP_H = 24;   // اجاره تا سقف ۲۴ ساعت جمع می‌شه
+const rentOf = (id, h, n) => Math.floor(HOMES[id].r * Math.min(RENT_CAP_H, Math.max(0, n - (h.t || n)) / 3600000));
+const bump = u => { u.mv = (u.mv || 0) + 1; };
 function newToken(email) { const t = crypto.randomBytes(32).toString('hex'); db.tokens[t] = email; save(); return t; }
 function auth(req) { const t = (req.headers.authorization || '').replace(/^Bearer /, ''); const e = db.tokens[t]; return e && db.users[e] && !db.banned[e] ? { email: e, user: db.users[e], token: t } : null; }
 
@@ -61,7 +68,10 @@ const routes = {
   '/api/save': async (req, res, b) => {
     const a = auth(req); if (!a) return fail(res, 401, 'وارد نشدی');
     const p = b.profile || {};
-    a.user.m = clamp(p.m, 0, 1e6, a.user.m); a.user.h = clamp(p.h, 0, 100, a.user.h);
+    // اگه موجودی سمت سرور بین‌راه عوض شده (انتقال/هدیه‌ی مدیر)، سکه‌ی کلاینت قدیمیه و نادیده گرفته می‌شه
+    const stale = b.mv !== undefined && (b.mv | 0) !== (a.user.mv || 0);
+    if (!stale) a.user.m = clamp(p.m, 0, 1e6, a.user.m);
+    a.user.h = clamp(p.h, 0, 100, a.user.h);
     // پلیس شدن فقط با مجوزِ سازنده
     if (p.job === 'citizen') a.user.job = 'citizen';
     else if (p.job === 'police' && (a.user.police || isAdminEmail(a.email))) a.user.job = 'police';
@@ -69,7 +79,7 @@ const routes = {
     if (p.job === 'banker' || p.job === 'baker') a.user.job = p.job;
     // ماشین‌ها فقط اضافه می‌شن (هیچ‌وقت کم نمی‌شن) و فقط از لیست مجاز
     if (Array.isArray(p.cars)) a.user.cars = [...new Set([...(a.user.cars || []), ...p.cars.filter(c => CAR_IDS.includes(c))])];
-    save(); send(res, 200, { ok: true });
+    save(); send(res, 200, stale ? { ok: true, stale: true, m: a.user.m, mv: a.user.mv || 0 } : { ok: true });
   },
   '/api/update': async (req, res, b) => {
     const a = auth(req); if (!a) return fail(res, 401, 'وارد نشدی');
@@ -138,7 +148,7 @@ routes['/api/send'] = async (req, res, b) => {
     return send(res, 200, { ok: true });
   }
   if (m.t === 'p') {
-    p.x = clamp(m.x, -420, 420, p.x); p.z = clamp(m.z, -420, 420, p.z); p.ry = clamp(m.ry, -10, 10, p.ry);
+    p.x = clamp(m.x, -720, 720, p.x); p.z = clamp(m.z, -720, 720, p.z); p.ry = clamp(m.ry, -10, 10, p.ry);
     // ظاهر پلیس فقط برای کسی که مجوز دارد و فقط توی سرور تست
     p.j = (p.perm && k.room === 'test' && m.j) ? 1 : 0;
     p.w = (k.room === 'test' && m.w) ? 1 : 0;
@@ -168,6 +178,66 @@ routes['/api/report'] = async (req, res, b) => {
   if (db.reports.length >= 200) db.reports.shift();
   db.reports.push({ rn, tn, r, ts: n }); save();
   send(res, 200, { ok: true });
+};
+
+/* ---------- انتقال سکه بین بازیکن‌ها (بانک) ---------- */
+routes['/api/transfer'] = async (req, res, b) => {
+  const a = auth(req); if (!a) return fail(res, 401, 'وارد نشدی');
+  const amt = Math.floor(Number(b.amount));
+  if (!(amt >= 1) || amt > 1e6) return fail(res, 400, 'مبلغ نامعتبر');
+  const n = Date.now(); if (n - (a.user.lastXfer || 0) < 3000) return fail(res, 429, 'چند ثانیه صبر کن');
+  const q = lower(b.to); if (!q) return fail(res, 400, 'گیرنده رو بنویس');
+  let toEmail = null;
+  if (q.includes('@')) toEmail = db.users[q] ? q : null;
+  else {
+    const hit = Object.entries(db.users).filter(([e, u]) => lower(u.name) === q).map(([e]) => e);
+    if (hit.length > 1) return fail(res, 409, 'چند حساب با این اسم هست؛ ایمیلش رو بنویس');
+    toEmail = hit[0] || null;
+  }
+  if (!toEmail) return fail(res, 404, 'حسابی با این اسم یا ایمیل پیدا نشد');
+  if (toEmail === a.email) return fail(res, 400, 'نمی‌تونی به خودت بفرستی');
+  if (db.banned[toEmail]) return fail(res, 400, 'این حساب بن شده');
+  const to = db.users[toEmail];
+  if ((a.user.m || 0) < amt) return fail(res, 400, 'سکه‌ات کافی نیست');
+  if ((to.m || 0) + amt > 1e6) return fail(res, 400, 'موجودی گیرنده بیشتر از سقف می‌شه');
+  a.user.m -= amt; to.m = (to.m || 0) + amt; a.user.lastXfer = n; bump(a.user); bump(to); save();
+  allPlayers().filter(p => p.email === toEmail).forEach(p => sendTo(p, { t: 'money', amt, from: a.user.name, mv: to.mv }));
+  send(res, 200, { ok: true, m: a.user.m, mv: a.user.mv, name: to.name });
+};
+
+/* ---------- ملک و خانه ---------- */
+function homesView(email) {
+  const n = Date.now(), out = {};
+  for (const id of Object.keys(HOMES)) {
+    const h = db.homes[id], u = h && db.users[h.o];
+    out[id] = h && u ? { o: u.name, me: h.o === email, rent: h.o === email ? rentOf(id, h, n) : 0 } : null;
+  }
+  return out;
+}
+routes['/api/homes'] = async (req, res) => { const a = auth(req); send(res, 200, { homes: homesView(a ? a.email : ''), defs: HOMES }); };
+routes['/api/home/buy'] = async (req, res, b) => {
+  const a = auth(req); if (!a) return fail(res, 401, 'وارد نشدی');
+  const id = String(b.id || ''), d = HOMES[id]; if (!d) return fail(res, 404, 'ملک پیدا نشد');
+  if (db.homes[id] && db.users[db.homes[id].o]) return fail(res, 409, 'این ملک قبلاً فروخته شده');
+  if (Object.values(db.homes).filter(h => h.o === a.email).length >= 3) return fail(res, 400, 'حداکثر ۳ ملک می‌تونی داشته باشی');
+  if ((a.user.m || 0) < d.p) return fail(res, 400, 'سکه‌ات کافی نیست');
+  a.user.m -= d.p; db.homes[id] = { o: a.email, t: Date.now() }; bump(a.user); save();
+  send(res, 200, { ok: true, m: a.user.m, mv: a.user.mv, homes: homesView(a.email) });
+};
+routes['/api/home/sell'] = async (req, res, b) => {
+  const a = auth(req); if (!a) return fail(res, 401, 'وارد نشدی');
+  const id = String(b.id || ''), d = HOMES[id], h = db.homes[id]; if (!d || !h || h.o !== a.email) return fail(res, 404, 'این ملک مال تو نیست');
+  const back = Math.floor(d.p * 0.6) + rentOf(id, h, Date.now());
+  a.user.m = Math.min(1e6, (a.user.m || 0) + back); delete db.homes[id]; bump(a.user); save();
+  send(res, 200, { ok: true, m: a.user.m, mv: a.user.mv, back, homes: homesView(a.email) });
+};
+routes['/api/home/rent'] = async (req, res, b) => {
+  const a = auth(req); if (!a) return fail(res, 401, 'وارد نشدی');
+  const n = Date.now(); let sum = 0;
+  for (const [id, h] of Object.entries(db.homes)) if (h.o === a.email && HOMES[id]) { sum += rentOf(id, h, n); h.t = n; }
+  if (sum < 1) return fail(res, 400, 'هنوز اجاره‌ای جمع نشده');
+  a.user.m = Math.min(1e6, (a.user.m || 0) + sum); bump(a.user); save();
+  send(res, 200, { ok: true, m: a.user.m, mv: a.user.mv, amt: sum, homes: homesView(a.email) });
 };
 
 /* ---------- پنل مدیر (فقط ایمیل‌های مدیر) ---------- */
@@ -222,8 +292,8 @@ routes['/api/admin/money'] = async (req, res, b) => {
   const email = lower(b.email);
   if (email) {
     const u = db.users[email]; if (!u) return fail(res, 404, 'حساب پیدا نشد');
-    u.m = clamp(u.m + amt, 0, 1e6, u.m); save();
-    allPlayers().filter(p => p.email === email).forEach(p => sendTo(p, { t: 'money', amt }));
+    u.m = clamp(u.m + amt, 0, 1e6, u.m); bump(u); save();
+    allPlayers().filter(p => p.email === email).forEach(p => sendTo(p, { t: 'money', amt, mv: u.mv }));
   } else {
     const ps = allPlayers().filter(p => p.id === String(b.id || '')); if (!ps.length) return fail(res, 404, 'بازیکن آنلاین نیست');
     ps.forEach(p => sendTo(p, { t: 'money', amt }));
