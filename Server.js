@@ -33,7 +33,6 @@ db.reports = db.reports || [];
 db.homes = db.homes || {};
 db.jailed = db.jailed || {};
 
-// آب‌وهوای مشترک و ذخیره‌شده
 const WEATHER_TYPES = [
   'clear', 'sunny', 'rain', 'snow', 'storm', 'fog'
 ];
@@ -42,9 +41,10 @@ db.weather = WEATHER_TYPES.includes(db.weather)
   ? db.weather
   : 'clear';
 
-// اصلاح موجودی‌های آزمایشی قبلی
+// مقداردهی اولیهٔ جم برای حساب‌های قبلی
 for (const u of Object.values(db.users)) {
   if (u.m === 99999) u.m = 200;
+  if (!Number.isFinite(u.diamonds)) u.diamonds = 0;
 }
 
 let dirty = false;
@@ -55,7 +55,6 @@ const save = () => {
 
 function flush() {
   if (!dirty) return;
-
   dirty = false;
 
   try {
@@ -173,6 +172,7 @@ const jailOf = (email, name) =>
 const profile = u => ({
   name: u.name,
   m: u.m,
+  diamonds: u.diamonds || 0,
   h: u.h,
   job: u.job,
   police: !!u.police,
@@ -270,6 +270,7 @@ const routes = {
       ph: hashPw(b.password, salt),
       name,
       m: 200,
+      diamonds: 0,
       h: 100,
       job: 'citizen'
     };
@@ -290,6 +291,10 @@ const routes = {
 
     if (db.banned[email])
       return fail(res, 403, 'حسابت بن شده');
+
+    // برای حساب‌های قدیمی که هنوز فیلد جم ندارند
+    if (!Number.isFinite(u.diamonds))
+      u.diamonds = 0;
 
     send(res, 200, {
       token: newToken(email),
@@ -340,6 +345,9 @@ const routes = {
         ...p.cars.filter(c => CAR_IDS.includes(c))
       ])];
     }
+
+    // موجودی جم فقط از سمت سرور تغییر می‌کند.
+    // مقدار جم ارسالی از HTML در این مسیر پذیرفته نمی‌شود.
 
     save();
 
@@ -895,7 +903,6 @@ const adm = (req, res) => {
   return a;
 };
 
-// تغییر آب‌وهوا توسط مدیر و انتشار در تمام روم‌ها
 routes['/api/admin/weather'] = async (req, res, b) => {
   if (!adm(req, res)) return;
 
@@ -932,6 +939,7 @@ routes['/api/admin/users'] = async (req, res) => {
       email,
       name: u.name,
       m: u.m,
+      diamonds: u.diamonds || 0,
       police: !!u.police,
       banned: !!db.banned[email],
       online: online.has(email),
@@ -1081,6 +1089,64 @@ routes['/api/admin/money'] = async (req, res, b) => {
 
     ps.forEach(p => sendTo(p, { t: 'money', amt }));
   }
+
+  send(res, 200, { ok: true });
+};
+
+/* ---------- افزودن جم توسط مدیر ---------- */
+
+routes['/api/admin/diamonds'] = async (req, res, b) => {
+  if (!adm(req, res)) return;
+
+  const amt = Math.floor(Number(b.amount));
+
+  if (!Number.isFinite(amt) || amt < 1 || amt > 1000000)
+    return fail(res, 400, 'مقدار جم نامعتبر است');
+
+  const email = lower(b.email);
+
+  // حساب ثبت‌شده: جم داخل دیتابیس ذخیره می‌شود
+  if (email) {
+    const u = db.users[email];
+
+    if (!u)
+      return fail(res, 404, 'حساب پیدا نشد');
+
+    u.diamonds = Math.min(
+      1000000,
+      Math.max(0, Number(u.diamonds) || 0) + amt
+    );
+
+    bump(u);
+    save();
+
+    // اگر کاربر آنلاین باشد، موجودی جدید برایش فرستاده می‌شود
+    allPlayers()
+      .filter(p => p.email === email)
+      .forEach(p => sendTo(p, {
+        t: 'diamonds',
+        diamonds: u.diamonds,
+        mv: u.mv
+      }));
+
+    return send(res, 200, {
+      ok: true,
+      diamonds: u.diamonds
+    });
+  }
+
+  // مهمان آنلاین حساب دائمی ندارد
+  const ps = allPlayers().filter(
+    p => p.id === String(b.id || '')
+  );
+
+  if (!ps.length)
+    return fail(res, 404, 'بازیکن آنلاین نیست یا حساب پیدا نشد');
+
+  ps.forEach(p => sendTo(p, {
+    t: 'diamonds',
+    amount: amt
+  }));
 
   send(res, 200, { ok: true });
 };
@@ -1271,7 +1337,6 @@ http.createServer(async (req, res) => {
 
     room.players.set(k.id, p);
 
-    // آب‌وهوای فعلی برای بازیکن تازه‌وارد
     sendTo(p, {
       t: 'weather',
       weather: db.weather
