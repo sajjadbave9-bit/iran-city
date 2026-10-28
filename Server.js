@@ -891,6 +891,49 @@ routes['/api/home/rent'] = async (req, res, b) => {
 };
 
 /* ---------- پنل مدیر ---------- */
+/* ---------- خرج کردن الماس حساب ---------- */
+
+routes['/api/diamonds/spend'] = async (req, res, b) => {
+  const a = auth(req);
+
+  if (!a)
+    return fail(res, 401, 'اول وارد حسابت شو');
+
+  const amount = Math.floor(Number(b.amount));
+
+  // فعلاً فقط بازکردن فوری صندوق با ۱۸ الماس مجاز است.
+  if (b.reason !== 'chest_instant' || amount !== 18)
+    return fail(res, 400, 'درخواست خرج الماس نامعتبر است');
+
+  const u = a.user;
+
+  if (!Number.isFinite(u.diamonds))
+    u.diamonds = 0;
+
+  if (u.diamonds < amount)
+    return fail(res, 400, 'الماس حسابت کافی نیست');
+
+  // کم‌کردن الماس از حساب واقعی کاربر
+  u.diamonds -= amount;
+
+  bump(u);
+  save();
+
+  // به‌روزرسانی موجودی برای کاربرانی که با این حساب آنلاین‌اند
+  allPlayers()
+    .filter(p => p.email === a.email)
+    .forEach(p => sendTo(p, {
+      t: 'diamonds',
+      diamonds: u.diamonds,
+      mv: u.mv
+    }));
+
+  return send(res, 200, {
+    ok: true,
+    diamonds: u.diamonds,
+    mv: u.mv
+  });
+};
 
 const adm = (req, res) => {
   const a = auth(req);
